@@ -1,0 +1,36 @@
+{
+  "name": "arena-mcp",
+  "version": "0.1.0",
+  "description": "Model Context Protocol server for Are.na — create channels, add blocks from any URL, search, and browse your visual boards.",
+  "type": "module",
+  "bin": {
+    "arena-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "are.na",
+    "arena",
+    "moodboard"
+  ],
+  "author": "Grayson Adams",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2"
+  }
+}
