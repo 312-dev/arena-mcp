@@ -16,6 +16,9 @@ Are.na is a quieter, human-curated alternative to Pinterest: channels are boards
 | **`arena_add_product`** | **Add a product with a GUARANTEED real image.** Resolves the image (og:image + Are.na fetcher fallback), rejects dead/redirecting links, screenshot renders, blanks, and error pages; sets the product-name title. Refuses rather than add a broken block. |
 | **`arena_add_products`** | Batch version — per-item report, skips (never adds) anything without a real image. |
 | `arena_search` | Full-text search (requires Are.na Premium). |
+| **`style_log`** | **Append a style learning** (preference shift, dislike, new direction) to the Style Journal channel. Append-only capture from any surface. |
+| **`style_directives`** | **Read the living style directives** -- the mutable layer (current-season focus + recent preference shifts) that a styling skill loads on top of its durable rules. |
+| **`style_set_directives`** | **Replace the directives doc** (full Markdown body). The fast loop for keeping styling current without republishing a skill. |
 
 `arena_add_product` accepts `fallback_urls` — if the primary link is dead it tries the fallbacks (a GOAT `goat.com`, Amazon `/dp/`, or garmentory product URL image-resolves reliably).
 
@@ -40,6 +43,16 @@ Get a personal access token at [dev.are.na](https://dev.are.na) → `ARENA_ACCES
 ## Style Radar (`src/radar.ts`)
 
 A weekly trend scanner (runs as a scheduled Fly machine, `node dist/radar.js`). It scrapes underground/enthusiast RSS (r/streetwear, r/rawdenim, r/goodyearwelt, r/malefashionadvice, Hypebeast, Highsnobiety, Die Workwear, Permanent Style, Put This On), then uses the Anthropic API **with web search** to find fresh, on-aesthetic pieces *and their real product URLs*, runs them through the image pipeline, and posts survivors to a **Radar** Are.na channel (a staging board you review). Env: `ANTHROPIC_API_KEY`, `RADAR_CHANNEL_SLUG`, `ARENA_ACCESS_TOKEN`.
+
+## Style evolution (keeping a styling skill from going stale)
+
+A static styling skill locks in whatever taste it was written with. Three tools + two Are.na channels give it a feedback loop:
+
+- **`style_log`** captures raw learnings ("done with cropped hems") into a **Style Journal** channel, append-only, from any surface (Desktop, mobile, claude.ai).
+- **`style_directives`** / **`style_set_directives`** read and write a **Style Directives** channel -- a single living Markdown doc holding current-season focus + recent shifts. A skill loads it at the start of a task so recommendations reflect the latest direction without republishing the skill (the *fast loop*).
+- A periodic human-gated review (the companion `style-review` skill) reads the journal, promotes durable learnings into the skill proper, folds temporary ones into the directives, and discards noise (the *slow loop*). Uses a `Last reviewed: <date>` watermark in the directives to avoid re-processing (Are.na blocks can't be individually deleted).
+
+Channel slugs are configured via `STYLE_JOURNAL_SLUG` / `STYLE_DIRECTIVES_SLUG` (default `style-journal` / `style-directives`).
 
 ## Deploy notes (v3 API)
 

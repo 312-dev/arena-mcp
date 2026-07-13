@@ -109,6 +109,21 @@ export const arena = {
   /** Fetch a single block by id (used to poll a pending block until its image processes). */
   getBlock: (id: number) => request(`/blocks/${id}`),
 
+  /** Update a block in place (PUT; PATCH is 405). Used to edit the living directives text block.
+   *  For a Text block, `content` is the Markdown body. */
+  updateBlock: (
+    id: number,
+    opts: { content?: string; title?: string; description?: string },
+  ) =>
+    request(`/blocks/${id}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        ...(opts.content !== undefined ? { content: opts.content } : {}),
+        ...(opts.title !== undefined ? { title: opts.title } : {}),
+        ...(opts.description !== undefined ? { description: opts.description } : {}),
+      }),
+    }),
+
   /** A user's own channels (GET /users/:slug/contents returns Channel objects). */
   listUserContents: (slug: string, per = 50, page = 1) =>
     request(`/users/${enc(slug)}/contents?per=${per}&page=${page}`),

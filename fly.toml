@@ -6,6 +6,8 @@ primary_region = "ord"
 [env]
   MCP_HTTP = "1"
   PORT = "8080"
+  STYLE_JOURNAL_SLUG = "style-journal"
+  STYLE_DIRECTIVES_SLUG = "style-directives"
 
 [http_service]
   internal_port = 8080

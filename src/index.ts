@@ -37,6 +37,10 @@ function slimBlock(b: any) {
     image: b.image?.src ?? b.image?.display?.url ?? null,
     content: flattenText(b.content), description: flattenText(b.description) };
 }
+function firstTextBlock(contents: any): any | null {
+  const data = contents?.data ?? [];
+  return data.find((b: any) => ((b?.type ?? b?.base_type) === "Text") || flattenText(b?.content) != null) ?? null;
+}
 function titleFromUrl(u: string): string {
   try {
     const seg = new URL(u).pathname.split("/").filter(Boolean).pop() || "";
@@ -158,6 +162,74 @@ export function registerTools(server: McpServer) {
       try {
         const res: any = await arena.search(query, per ?? 20);
         return ok({ total: res.meta?.total_count, results: (res.data ?? []).map((x: any) => x.type === "Channel" ? slimChannel(x) : slimBlock(x)) });
+      } catch (e) { return fail(e); }
+    });
+
+  // ---- style evolution: journal (capture) + directives (live layer) ----
+  // The mens-style skill is the durable brain; these keep it evolving:
+  //  - style_log appends a raw learning to the Style Journal (append-only capture).
+  //  - style_directives reads the living directives doc (the mutable layer the skill loads).
+  //  - style_set_directives edits that doc in place (the fast loop).
+  // A periodic /style-review promotes durable journal learnings into the skill (the slow loop).
+  const JOURNAL = () => process.env.STYLE_JOURNAL_SLUG || "style-journal";
+  const DIRECTIVES = () => process.env.STYLE_DIRECTIVES_SLUG || "style-directives";
+
+  server.registerTool("style_log",
+    { title: "Log a style learning",
+      description:
+        "Append a durable style learning or preference shift to the Style Journal (append-only). " +
+        "Use when Grayson states a new preference, dislike, or direction, or you notice a repeated pattern " +
+        "worth remembering (e.g. 'decided he's done with cropped hems', 'leaning into wider trousers'). " +
+        "These accumulate and get reviewed later and promoted into the mens-style skill or the directives.",
+      inputSchema: {
+        note: z.string().describe("The learning, in his voice or as an observation."),
+        tags: z.array(z.string()).optional().describe("Optional tags e.g. ['fit','watches','dislike']."),
+      } },
+    async ({ note, tags }) => {
+      try {
+        const c: any = await arena.getChannel(JOURNAL());
+        if (!c?.id) return fail(new Error(`Journal channel '${JOURNAL()}' not found.`));
+        const date = new Date().toISOString().slice(0, 10);
+        const tagline = tags?.length ? `\n\ntags: ${tags.join(", ")}` : "";
+        const b: any = await arena.addBlock(c.id, `**[${date}]** ${note}${tagline}`);
+        return ok({ logged: note, journal: JOURNAL(), date, block_id: b?.id });
+      } catch (e) { return fail(e); }
+    });
+
+  server.registerTool("style_directives",
+    { title: "Read the living style directives",
+      description:
+        "Return the current, mutable style directives (current-season focus + recent preference updates) " +
+        "that sit on top of the durable mens-style skill. Call this at the START of any styling task so " +
+        "recommendations reflect the latest direction, not just the static skill.",
+      inputSchema: {} },
+    async () => {
+      try {
+        const contents: any = await arena.getChannelContents(DIRECTIVES(), 50, 1);
+        const tb = firstTextBlock(contents);
+        return ok(tb ? (flattenText(tb.content) ?? "(directives are empty)") : "(no directives set yet)");
+      } catch (e) { return fail(e); }
+    });
+
+  server.registerTool("style_set_directives",
+    { title: "Update the living style directives",
+      description:
+        "Replace the style directives document (the mutable layer read by style_directives). Pass the FULL " +
+        "new Markdown body, not a diff. Use to update current-season focus or fold in a confirmed preference " +
+        "shift. Durable rule changes belong in the mens-style skill via /style-review, not here.",
+      inputSchema: { content: z.string().describe("Full Markdown body of the new directives doc.") } },
+    async ({ content }) => {
+      try {
+        const c: any = await arena.getChannel(DIRECTIVES());
+        if (!c?.id) return fail(new Error(`Directives channel '${DIRECTIVES()}' not found.`));
+        const contents: any = await arena.getChannelContents(DIRECTIVES(), 50, 1);
+        const tb = firstTextBlock(contents);
+        if (tb?.id) {
+          await arena.updateBlock(tb.id, { content });
+          return ok({ updated: true, directives: DIRECTIVES(), block_id: tb.id });
+        }
+        const b: any = await arena.addBlock(c.id, content);
+        return ok({ created: true, directives: DIRECTIVES(), block_id: b?.id });
       } catch (e) { return fail(e); }
     });
 }
