@@ -1,0 +1,6 @@
+node_modules
+dist
+.git
+.envrc
+*.log
+.DS_Store

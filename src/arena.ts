@@ -89,16 +89,25 @@ export const arena = {
       body: JSON.stringify({ title, visibility }),
     }),
 
-  /** Create a block from a URL (image/link/embed) or Markdown text and connect it to a channel by id. */
-  addBlock: (channelId: number, value: string, description?: string) =>
+  /** Create a block from a URL (image/link/embed) or Markdown text and connect it to a channel by id.
+   *  opts may set a `title` (product name) and/or `description`. */
+  addBlock: (
+    channelId: number,
+    value: string,
+    opts?: { title?: string; description?: string },
+  ) =>
     request(`/blocks`, {
       method: "POST",
       body: JSON.stringify({
         value,
         channel_ids: [channelId],
-        ...(description ? { description } : {}),
+        ...(opts?.title ? { title: opts.title } : {}),
+        ...(opts?.description ? { description: opts.description } : {}),
       }),
     }),
+
+  /** Fetch a single block by id (used to poll a pending block until its image processes). */
+  getBlock: (id: number) => request(`/blocks/${id}`),
 
   /** A user's own channels (GET /users/:slug/contents returns Channel objects). */
   listUserContents: (slug: string, per = 50, page = 1) =>
