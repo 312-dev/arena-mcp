@@ -63,9 +63,29 @@ export function registerTools(server: McpServer) {
     { title: "List my channels", description: "Channels owned by the authenticated user.",
       inputSchema: { per: z.number().int().min(1).max(100).optional(), page: z.number().int().min(1).optional() } },
     async ({ per, page }) => {
-      try { const me: any = await arena.me();
-        const res: any = await arena.listUserContents(me.slug, per ?? 50, page ?? 1);
-        return ok({ owner: me.slug, channels: (res.data ?? []).filter((x: any) => x.type === "Channel").map(slimChannel) });
+      try {
+        const me: any = await arena.me();
+        const size = per ?? 100;
+        // Sweep EVERY page. Are.na's list endpoint returns partial/stale single pages,
+        // so a one-page read can make channels look missing. Cap the loop as a backstop.
+        const all: any[] = [];
+        for (let p = page ?? 1, i = 0; i < 20; p++, i++) {
+          const res: any = await arena.listUserContents(me.slug, size, p);
+          const data = res.data ?? [];
+          all.push(...data);
+          if (data.length < size) break;
+        }
+        // Hide internal __ scratch channels (pipeline byproducts) so they never
+        // pollute the board list or make a client miscount.
+        const seen = new Set<number>();
+        const channels: any[] = [];
+        for (const x of all) {
+          if (x.type !== "Channel" || String(x.title ?? "").startsWith("__")) continue;
+          if (x.id != null && seen.has(x.id)) continue; // de-dupe overlap across pages
+          if (x.id != null) seen.add(x.id);
+          channels.push(slimChannel(x));
+        }
+        return ok({ owner: me.slug, count: channels.length, channels });
       } catch (e) { return fail(e); }
     });
 

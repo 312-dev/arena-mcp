@@ -119,6 +119,14 @@ export async function validImage(imgUrl: string | null): Promise<{ ok: boolean; 
 let scratchId: number | null = null;
 async function getScratch(): Promise<number> {
   if (scratchId) return scratchId;
+  // Reuse an existing __mcp_scratch across cold-starts instead of minting a new one
+  // each time the serverless process boots (which is how these leaked before).
+  try {
+    const me: any = await arena.me();
+    const res: any = await arena.listUserContents(me.slug, 100, 1);
+    const existing = (res.data ?? []).find((c: any) => c.type === "Channel" && c.title === "__mcp_scratch");
+    if (existing?.id) { scratchId = existing.id; return scratchId!; }
+  } catch { /* fall through and create one */ }
   const c: any = await arena.createChannel("__mcp_scratch", "private");
   scratchId = c.id;
   return scratchId!;
