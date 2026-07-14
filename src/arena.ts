@@ -124,6 +124,12 @@ export const arena = {
       }),
     }),
 
+  /** Remove a block from a channel by deleting its CONNECTION. Deleting a block entity is 405,
+   *  but a block-in-channel is a connection (id on each contents item's `connection` object);
+   *  deleting that connection detaches the block from the board without destroying the block. */
+  removeConnection: (connectionId: number) =>
+    request(`/connections/${connectionId}`, { method: "DELETE" }),
+
   /** A user's own channels (GET /users/:slug/contents returns Channel objects). */
   listUserContents: (slug: string, per = 50, page = 1) =>
     request(`/users/${enc(slug)}/contents?per=${per}&page=${page}`),

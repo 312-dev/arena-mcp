@@ -13,6 +13,7 @@ Are.na is a quieter, human-curated alternative to Pinterest: channels are boards
 | `arena_get_channel` | Fetch a channel by slug + a page of its blocks. |
 | `arena_create_channel` | Create a channel (`public`/`closed`/`private`). |
 | `arena_add_block` | Add a raw block from a URL or Markdown (no image validation). |
+| **`arena_remove_block`** | **Remove a block from a board** by deleting its connection (block ids come from `arena_get_channel`). Detaches it from the board without destroying the block. |
 | **`arena_add_product`** | **Add a product with a GUARANTEED real image.** Resolves the image (og:image + Are.na fetcher fallback), rejects dead/redirecting links, screenshot renders, blanks, and error pages; sets the product-name title. Refuses rather than add a broken block. |
 | **`arena_add_products`** | Batch version — per-item report, skips (never adds) anything without a real image. |
 | `arena_search` | Full-text search (requires Are.na Premium). |
@@ -56,7 +57,7 @@ Channel slugs are configured via `STYLE_JOURNAL_SLUG` / `STYLE_DIRECTIVES_SLUG` 
 
 ## Deploy notes (v3 API)
 
-Built against Are.na **v3** (`https://api.are.na/v3`; v2 writes are wound down). Blocks: `POST /v3/blocks {value, channel_ids}`; image URL under `image.src`; `visibility` not `status`; individual blocks can't be deleted (rebuild the channel). Search is Premium-gated.
+Built against Are.na **v3** (`https://api.are.na/v3`; v2 writes are wound down). Blocks: `POST /v3/blocks {value, channel_ids}`; image URL under `image.src`; `visibility` not `status`. A block *entity* can't be deleted (`DELETE /v3/blocks/:id` -> 405), but a block can be **removed from a board** by deleting its connection (`DELETE /v3/connections/:connection_id`, where the id is on each contents item's `connection` object) -- this is what `arena_remove_block` does, so no full rebuild is needed just to drop a few pieces. Search is Premium-gated.
 
 ## License
 

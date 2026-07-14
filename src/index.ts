@@ -118,6 +118,35 @@ export function registerTools(server: McpServer) {
       } catch (e) { return fail(e); }
     });
 
+  server.registerTool("arena_remove_block",
+    { title: "Remove a block from a board",
+      description:
+        "Remove a block from a channel (e.g. a piece that no longer fits the brief). Are.na can't delete a " +
+        "block entity (405), but this deletes its CONNECTION to the board, which detaches it from that board " +
+        "(the block itself is not destroyed). Pass the board slug and the block_id from arena_get_channel.",
+      inputSchema: {
+        channel_slug: z.string().describe("Board to remove the block from."),
+        block_id: z.number().int().describe("Block id to remove (get it from arena_get_channel)."),
+      } },
+    async ({ channel_slug, block_id }) => {
+      try {
+        const c: any = await arena.getChannel(channel_slug);
+        if (!c?.id) return fail(new Error(`Channel '${channel_slug}' not found.`));
+        // The connection id lives on the channel-contents item, not on /blocks/:id/connections.
+        let connId: number | null = null, title: string | null = null;
+        for (let p = 1; p <= 20 && connId == null; p++) {
+          const res: any = await arena.getChannelContents(channel_slug, 100, p);
+          const data = res.data ?? [];
+          const hit = data.find((b: any) => b.id === block_id);
+          if (hit) { connId = hit.connection?.id ?? null; title = hit.title ?? null; }
+          if (data.length < 100) break;
+        }
+        if (connId == null) return fail(new Error(`Block ${block_id} is not on '${channel_slug}'.`));
+        await arena.removeConnection(connId);
+        return ok({ removed: block_id, title, board: channel_slug });
+      } catch (e) { return fail(e); }
+    });
+
   // ---- the image-safe product tool (the pipeline as a tool) ----
   server.registerTool("arena_add_product",
     { title: "Add a product to a board (guaranteed real image)",
