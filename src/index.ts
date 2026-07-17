@@ -297,12 +297,20 @@ async function main() {
     app.use(express.json({ limit: "2mb" }));
     const AUTH = process.env.MCP_AUTH_TOKEN;
     app.get("/health", (_req, res) => res.json({ ok: true, name: "arena-mcp" }));
+    // This is a STATELESS server (no session), so it has no server-initiated SSE
+    // stream. Reply 405 to a GET /mcp so clients (e.g. Open WebUI) don't sit in a
+    // "GET stream disconnected, reconnecting..." loop and intermittently drop the
+    // tools mid-chat.
+    app.get("/mcp", (_req, res) => res.status(405).set("Allow", "POST").json({ error: "method not allowed" }));
     app.post("/mcp", async (req, res) => {
       if (AUTH && req.header("authorization") !== `Bearer ${AUTH}`) {
         res.status(401).json({ error: "unauthorized" }); return;
       }
       const server = buildServer();
-      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+      // enableJsonResponse: answer each POST with a JSON body instead of an SSE
+      // stream - correct for a stateless request/response tool server, and it
+      // avoids the flaky long-lived SSE stream that was breaking tool calls.
+      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
       res.on("close", () => { transport.close(); server.close(); });
       await server.connect(transport);
       await transport.handleRequest(req, res, req.body);
