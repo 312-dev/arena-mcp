@@ -82,11 +82,25 @@ export const arena = {
   getChannelContents: (slug: string, per = 24, page = 1) =>
     request(`/channels/${enc(slug)}/contents?per=${per}&page=${page}`),
 
-  /** Create a new channel owned by the authenticated user. */
-  createChannel: (title: string, visibility: ChannelVisibility = "public") =>
+  /** Create a new channel owned by the authenticated user. Optional Markdown description. */
+  createChannel: (title: string, visibility: ChannelVisibility = "public", description?: string) =>
     request(`/channels`, {
       method: "POST",
-      body: JSON.stringify({ title, visibility }),
+      body: JSON.stringify({ title, visibility, ...(description !== undefined ? { description } : {}) }),
+    }),
+
+  /** Update a channel's title / description / visibility in place (PUT). Only sends the fields given. */
+  updateChannel: (
+    slug: string,
+    opts: { title?: string; description?: string; visibility?: ChannelVisibility },
+  ) =>
+    request(`/channels/${enc(slug)}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        ...(opts.title !== undefined ? { title: opts.title } : {}),
+        ...(opts.description !== undefined ? { description: opts.description } : {}),
+        ...(opts.visibility !== undefined ? { visibility: opts.visibility } : {}),
+      }),
     }),
 
   /** Create a block from a URL (image/link/embed) or Markdown text and connect it to a channel by id.

@@ -23,6 +23,7 @@ function channelUrl(c: any): string | null {
 function slimChannel(c: any) {
   if (!c) return c;
   return { id: c.id, title: c.title, slug: c.slug, visibility: c.visibility,
+    description: flattenText(c.description),
     blocks: c.counts?.contents ?? c.counts?.blocks ?? c.length ?? null, owner: ownerSlug(c), url: channelUrl(c) };
 }
 function flattenText(v: any): string | null {
@@ -100,10 +101,27 @@ export function registerTools(server: McpServer) {
     });
 
   server.registerTool("arena_create_channel",
-    { title: "Create a channel", description: "Create a channel. visibility: public | closed | private.",
-      inputSchema: { title: z.string(), visibility: z.enum(["public", "closed", "private"]).optional() } },
-    async ({ title, visibility }) => {
-      try { return ok(slimChannel(await arena.createChannel(title, visibility ?? "public"))); } catch (e) { return fail(e); }
+    { title: "Create a channel", description: "Create a channel. visibility: public | closed | private. Optional Markdown description for the board itself.",
+      inputSchema: {
+        title: z.string(),
+        visibility: z.enum(["public", "closed", "private"]).optional(),
+        description: z.string().optional().describe("Board (channel) description, Markdown."),
+      } },
+    async ({ title, visibility, description }) => {
+      try { return ok(slimChannel(await arena.createChannel(title, visibility ?? "public", description))); } catch (e) { return fail(e); }
+    });
+
+  server.registerTool("arena_update_channel",
+    { title: "Update a channel's title / description / visibility",
+      description: "Update an existing board (channel): change its title, its description (Markdown), and/or visibility. Only the fields you pass are modified; pass an empty description string to clear it.",
+      inputSchema: {
+        channel_slug: z.string().describe("Slug of the board to update."),
+        title: z.string().optional(),
+        description: z.string().optional().describe("Board (channel) description, Markdown."),
+        visibility: z.enum(["public", "closed", "private"]).optional(),
+      } },
+    async ({ channel_slug, title, description, visibility }) => {
+      try { return ok(slimChannel(await arena.updateChannel(channel_slug, { title, description, visibility }))); } catch (e) { return fail(e); }
     });
 
   server.registerTool("arena_add_block",
