@@ -151,10 +151,11 @@ export function registerTools(server: McpServer) {
   server.registerTool("arena_add_product",
     { title: "Add a product to a board (guaranteed real image)",
       description:
-        "Add a product to a channel with a GUARANTEED real product photo. Resolves the image from the given URL " +
-        "(and any fallbacks), rejecting dead/redirecting links, screenshot renders, blanks, and error pages. " +
-        "If it can't get a real image it does NOT add a broken block — it returns an error asking for a better source " +
-        "(a GOAT goat.com, Amazon /dp/, or garmentory product URL). Sets the product name as the block title.",
+        "Add a product to a channel with a real product photo. Resolves the image from the given URL (and any " +
+        "fallbacks), rejecting dead/redirecting links, screenshot renders, blanks, and error pages. If the page has " +
+        "no usable image it SEARCHES the web for a real photo of the product by name (Brave Images); if even that " +
+        "fails it still adds the product as a link block with the shop URL in the description. NEVER rejects a " +
+        "product. Sets the product name as the block title.",
       inputSchema: {
         channel_slug: z.string().describe("Slug of the board to add to."),
         url: z.string().url().describe("Primary product-page URL."),
@@ -166,20 +167,23 @@ export function registerTools(server: McpServer) {
       try {
         const c: any = await arena.getChannel(channel_slug);
         if (!c?.id) return fail(new Error(`Channel '${channel_slug}' not found.`));
-        const r = await resolveImage([url, ...(fallback_urls ?? [])]);
-        if (!r) return fail(new Error(
-          "No real product image could be resolved — the link is likely dead/redirecting or the retailer blocks bots. " +
-          "Try a goat.com, amazon.com/dp/, or garmentory.com product URL in `url` or `fallback_urls`."));
-        const t = title || titleFromUrl(r.src);
-        const desc = [note, `shop: ${r.src}`].filter(Boolean).join(" · ");
-        const b: any = await arena.addBlock(c.id, r.img, { title: t, description: desc });
-        return ok({ added: t, board: channel_slug, image_via: r.how, image: r.info, block_id: b?.id });
+        const t = title || titleFromUrl(url);
+        // Try the product's own image; fall back to a web image search by name.
+        const r = await resolveImage([url, ...(fallback_urls ?? [])], t);
+        if (r) {
+          const desc = [note, `shop: ${url}`].filter(Boolean).join(" · ");
+          const b: any = await arena.addBlock(c.id, r.img, { title: t, description: desc });
+          return ok({ added: t, board: channel_slug, image_via: r.how, image: r.info, block_id: b?.id });
+        }
+        // Never reject a product: add it as a link block (Are.na builds its own preview).
+        const b: any = await arena.addBlock(c.id, url, { title: t, description: [note].filter(Boolean).join(" · ") });
+        return ok({ added: t, board: channel_slug, image_via: "link", note: "no image found; added as a link block", block_id: b?.id });
       } catch (e) { return fail(e); }
     });
 
   server.registerTool("arena_add_products",
     { title: "Add several products to a board (guaranteed real images)",
-      description: "Batch version of arena_add_product. Each item is {url, title?, note?, fallback_urls?}. Returns a per-item report; items with no real image are reported as skipped, never added broken.",
+      description: "Batch version of arena_add_product. Each item is {url, title?, note?, fallback_urls?}. EVERY item is added: with its product photo when the page has one, else a web-searched photo (by name), else as a link block. Never skips a product. Returns how each item got its image (og/arena/search/link).",
       inputSchema: {
         channel_slug: z.string(),
         items: z.array(z.object({
@@ -191,16 +195,23 @@ export function registerTools(server: McpServer) {
       try {
         const c: any = await arena.getChannel(channel_slug);
         if (!c?.id) return fail(new Error(`Channel '${channel_slug}' not found.`));
-        const added: string[] = [], skipped: string[] = [];
+        const added: string[] = [];
+        const image_via: Record<string, string> = {};
         for (const it of items) {
-          const r = await resolveImage([it.url, ...(it.fallback_urls ?? [])]);
           const t = it.title || titleFromUrl(it.url);
-          if (!r) { skipped.push(t); continue; }
-          const desc = [it.note, `shop: ${r.src}`].filter(Boolean).join(" · ");
-          await arena.addBlock(c.id, r.img, { title: t, description: desc });
+          const r = await resolveImage([it.url, ...(it.fallback_urls ?? [])], t);
+          if (r) {
+            const desc = [it.note, `shop: ${it.url}`].filter(Boolean).join(" · ");
+            await arena.addBlock(c.id, r.img, { title: t, description: desc });
+            image_via[t] = r.how;
+          } else {
+            // Never skip: add as a link block so the product still lands on the board.
+            await arena.addBlock(c.id, it.url, { title: t, description: [it.note].filter(Boolean).join(" · ") });
+            image_via[t] = "link";
+          }
           added.push(t);
         }
-        return ok({ board: channel_slug, added_count: added.length, skipped_count: skipped.length, added, skipped });
+        return ok({ board: channel_slug, added_count: added.length, added, image_via });
       } catch (e) { return fail(e); }
     });
 

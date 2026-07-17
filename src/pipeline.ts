@@ -153,9 +153,37 @@ async function arenaFetchImage(url: string): Promise<string | null> {
   return null;
 }
 
+// ---- keyed image-search fallback (Brave Images) ----------------------------
+// When a product's own page yields no usable image, find a real photo of it by
+// name. No-ops (returns []) if BRAVE_SEARCH_API_KEY isn't set.
+export async function braveImageSearch(query: string, count = 6): Promise<string[]> {
+  const key = process.env.BRAVE_SEARCH_API_KEY;
+  if (!key || !query) return [];
+  try {
+    const u = `https://api.search.brave.com/res/v1/images/search?q=${encodeURIComponent(query)}&count=${count}&country=us`;
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 12000);
+    const r = await fetch(u, {
+      headers: { "X-Subscription-Token": key, Accept: "application/json" },
+      signal: ctrl.signal,
+    }).finally(() => clearTimeout(t));
+    if (!r.ok) return [];
+    const j: any = await r.json();
+    const out: string[] = [];
+    for (const it of j.results ?? []) {
+      const full = it?.properties?.url, thumb = it?.thumbnail?.src;
+      if (typeof full === "string") out.push(full);
+      else if (typeof thumb === "string") out.push(thumb);
+    }
+    return out;
+  } catch { return []; }
+}
+
 // ---- resolve: first candidate that yields a real product image -------------
-export interface Resolved { img: string; how: "og" | "arena"; src: string; info: string; }
-export async function resolveImage(candidates: string[]): Promise<Resolved | null> {
+export interface Resolved { img: string; how: "og" | "arena" | "search"; src: string; info: string; }
+// candidates = product-page URLs to scrape; searchQuery = product name to fall
+// back to a web image search for if none of the pages yield a usable photo.
+export async function resolveImage(candidates: string[], searchQuery?: string): Promise<Resolved | null> {
   for (const url of candidates) {
     if (!looksLikeProduct(url)) continue;
     const { img, dead } = await ogImage(url);
@@ -165,6 +193,13 @@ export async function resolveImage(candidates: string[]): Promise<Resolved | nul
     const img2 = await arenaFetchImage(url);
     v = await validImage(img2);
     if (v.ok && img2) return { img: img2, how: "arena", src: url, info: v.info };
+  }
+  // Fallback: find a real product photo online by name (Brave Images).
+  if (searchQuery) {
+    for (const imgUrl of await braveImageSearch(searchQuery)) {
+      const v = await validImage(imgUrl);
+      if (v.ok) return { img: imgUrl, how: "search", src: searchQuery, info: v.info };
+    }
   }
   return null;
 }
