@@ -4,7 +4,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import express from "express";
 import { z } from "zod";
 import { arena, ArenaError } from "./arena.js";
-import { resolveImage } from "./pipeline.js";
+import { resolveImage, withDeadline } from "./pipeline.js";
 
 // ---- helpers ---------------------------------------------------------------
 
@@ -199,7 +199,31 @@ export function registerTools(server: McpServer) {
       } catch (e) { return fail(e); }
     });
 
-  server.registerTool("arena_add_products",
+  // Resolve N items concurrently, preserving input order. Image resolution is
+// network-bound and every item is independent, so doing them one at a time was
+// pure latency: ten products serially blew past the caller's tool timeout,
+// which left a half-filled board and forced the model to reconcile.
+async function pool<T, R>(items: T[], limit: number, fn: (t: T, i: number) => Promise<R>): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, async () => {
+      for (;;) {
+        const i = next++;
+        if (i >= items.length) return;
+        out[i] = await fn(items[i], i);
+      }
+    }),
+  );
+  return out;
+}
+
+// Hard ceiling per product. Whatever has not resolved by now becomes a link
+// block: a board entry with no photo beats a timed-out batch.
+const ITEM_DEADLINE_MS = Number(process.env.ITEM_DEADLINE_MS || 45000);
+const RESOLVE_CONCURRENCY = Number(process.env.RESOLVE_CONCURRENCY || 5);
+
+server.registerTool("arena_add_products",
     { title: "Add several products to a board (guaranteed real images)",
       description: "Batch version of arena_add_product. Each item is {url, title?, note?, fallback_urls?}. EVERY item is added: with its product photo when the page has one, else a web-searched photo (by name), else as a link block. Never skips a product. Returns how each item got its image (og/arena/search/link).",
       inputSchema: {
@@ -215,9 +239,19 @@ export function registerTools(server: McpServer) {
         if (!c?.id) return fail(new Error(`Channel '${channel_slug}' not found.`));
         const added: string[] = [];
         const image_via: Record<string, string> = {};
-        for (const it of items) {
-          const t = it.title || titleFromUrl(it.url);
-          const r = await resolveImage([it.url, ...(it.fallback_urls ?? [])], t);
+
+        // Phase 1: resolve images concurrently (network-bound, independent).
+        const titles = items.map((it) => it.title || titleFromUrl(it.url));
+        const resolved = await pool(items, RESOLVE_CONCURRENCY, (it, i) =>
+          withDeadline(resolveImage([it.url, ...(it.fallback_urls ?? [])], titles[i]), ITEM_DEADLINE_MS),
+        );
+
+        // Phase 2: write serially, in input order. Are.na block creation is
+        // cheap but order-sensitive - parallel writes scramble the board.
+        for (let i = 0; i < items.length; i++) {
+          const it = items[i];
+          const t = titles[i];
+          const r = resolved[i];
           if (r) {
             const desc = [it.note, `shop: ${it.url}`].filter(Boolean).join(" · ");
             await arena.addBlock(c.id, r.img, { title: t, description: desc });

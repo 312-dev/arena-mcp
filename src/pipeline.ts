@@ -48,7 +48,7 @@ const OG_PATTERNS = [
   /name=["']twitter:image(?::src)?["'][^>]*content=["']([^"']+)/i,
 ];
 
-async function fetchText(url: string, timeoutMs = 18000): Promise<Response> {
+async function fetchText(url: string, timeoutMs = 10000): Promise<Response> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
@@ -68,7 +68,7 @@ async function fetchText(url: string, timeoutMs = 18000): Promise<Response> {
 }
 
 // Returns { img, dead }. dead=true means skip this candidate entirely.
-export async function ogImage(url: string, tries = 3): Promise<{ img: string | null; dead: boolean }> {
+export async function ogImage(url: string, tries = 2): Promise<{ img: string | null; dead: boolean }> {
   for (let i = 0; i < tries; i++) {
     try {
       const r = await fetchText(url);
@@ -83,7 +83,7 @@ export async function ogImage(url: string, tries = 3): Promise<{ img: string | n
       }
       return { img: null, dead: false };
     } catch {
-      if (i + 1 < tries) { await sleep((i + 1) * 3000); continue; }
+      if (i + 1 < tries) { await sleep(2000); continue; }
       return { img: null, dead: false };
     }
   }
@@ -95,7 +95,7 @@ export async function validImage(imgUrl: string | null): Promise<{ ok: boolean; 
   if (!imgUrl) return { ok: false, info: "none" };
   try {
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 15000);
+    const t = setTimeout(() => ctrl.abort(), 10000);
     const res = await fetch(imgUrl, { headers: { "User-Agent": BROWSER }, signal: ctrl.signal }).finally(() => clearTimeout(t));
     const buf = Buffer.from(await res.arrayBuffer());
     const img = sharp(buf);
@@ -145,8 +145,8 @@ async function arenaFetchImage(url: string): Promise<string | null> {
   const sid = await getScratch();
   const blk: any = await arena.addBlock(sid, url).catch(() => null);
   if (!blk?.id) return null;
-  for (let i = 0; i < 11; i++) {
-    await sleep(3000);
+  for (let i = 0; i < 7; i++) {
+    await sleep(2500);
     const b: any = await arena.getBlock(blk.id).catch(() => null);
     if (b && b.type !== "PendingBlock") return imgSrc(b.image);
   }
@@ -156,7 +156,7 @@ async function arenaFetchImage(url: string): Promise<string | null> {
 // ---- keyed image-search fallback (Brave Images) ----------------------------
 // When a product's own page yields no usable image, find a real photo of it by
 // name. No-ops (returns []) if BRAVE_SEARCH_API_KEY isn't set.
-export async function braveImageSearch(query: string, count = 6): Promise<string[]> {
+export async function braveImageSearch(query: string, count = 3): Promise<string[]> {
   const key = process.env.BRAVE_SEARCH_API_KEY;
   if (!key || !query) return [];
   try {
@@ -183,6 +183,15 @@ export async function braveImageSearch(query: string, count = 6): Promise<string
 export interface Resolved { img: string; how: "og" | "arena" | "search"; src: string; info: string; }
 // candidates = product-page URLs to scrape; searchQuery = product name to fall
 // back to a web image search for if none of the pages yield a usable photo.
+/** Run `p`, giving up with `null` after `ms`. */
+export function withDeadline<T>(p: Promise<T>, ms: number): Promise<T | null> {
+  return new Promise((resolve) => {
+    const t = setTimeout(() => resolve(null), ms);
+    p.then((v) => { clearTimeout(t); resolve(v); })
+     .catch(() => { clearTimeout(t); resolve(null); });
+  });
+}
+
 export async function resolveImage(candidates: string[], searchQuery?: string): Promise<Resolved | null> {
   for (const url of candidates) {
     if (!looksLikeProduct(url)) continue;
